@@ -1,83 +1,76 @@
-import logging
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.ext import (Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters)
+import telebot
 from config import BOT_TOKEN, BOT_NAME
-
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG)
-
+from telebot import types
+from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+bot = telebot.TeleBot(BOT_TOKEN)
 DATA = []
-NAME, DESCRIPTION, THETYPE, ONCE = range(4)
 
 
-async def start(update, context):
-    """Отправляет сообщение когда получена команда /start"""
-    user = update.effective_user
-    await update.message.reply_text(f"Здравствуй! Я {BOT_NAME}."
-                                    f" Это пока что бета-версия, но с её развитием я расскажу о новых возможностях!")
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.from_user.id, "Привет! Я {BOT_NAME}, твой бот-напоминатель!")
 
 
-async def reminder(update, context):
-    await update.message.reply_text(f"Создается новый напоминатель.Введите название.")
+@bot.message_handler(commands=['reminder'])
+def reminder(message):
+    msg = bot.reply_to(message,"Создается новый напоминатель. Введите название.")
     DATA.append({})
-    return NAME
-
-async def name(update, context):
-    DATA[-1]['Name'] = update.message.text
-    await update.message.reply_text("""Отлично. Напишите сообщение, которое вы получите при
-                                        достижении времени.""")
-    return DESCRIPTION
+    bot.register_next_step_handler(msg, name)
 
 
-async def description(update, context):
-    DATA[-1]['Description'] = update.message.text
-    reply_keyboard = [["Разовый", "Цикличный"]]
-    await update.message.reply_text("""Как скажите. Теперь выберите, какой вид напоминания вы бы хотели.""",
-                                    reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True,
-                                                                     resize_keyboard=True), )
-    return THETYPE
+def name(message):
+    DATA[-1]['Name'] = message.text
+    msg = bot.reply_to(message,"""Отлично. Напишите сообщение, которое вы получите при достижении времени.""")
+    bot.register_next_step_handler(msg, description)
 
 
-async def thetype(update, context):
-    choice = update.message.text
-    if choice == 'Разовый':
-        DATA[-1]['Type'] = 'Once'
-        reply_keyboard = [["Да", "Нет"]]
-        await update.message.reply_text("""Стоит ли упомянуть заранее?""",
-                                        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True,
-                                                                         resize_keyboard=True), )
-        return ONCE
-    elif choice == 'Цикличный':
+def description(message):
+    DATA[-1]['Description'] = message.text
+    keyboard = types.ReplyKeyboardMarkup(row_width=2)
+    button1 = types.KeyboardButton('Разовый')
+    button2 = types.KeyboardButton('Цикличный')
+    keyboard.add(button1, button2)
+    msg = bot.reply_to(message, """Как скажите. Теперь выберите, какой вид напоминания вы бы хотели.""",
+                       reply_markup=keyboard)
+    bot.register_next_step_handler(msg, type)
+
+
+def type(message):
+    DATA[-1]['Type'] = message.text
+    if message.text == 'Разовый':
+        keyboard = types.ReplyKeyboardMarkup(row_width=2)
+        button1 = types.KeyboardButton('Да')
+        button2 = types.KeyboardButton('Нет')
+        keyboard.add(button1, button2)
+        msg = bot.reply_to(message, 'Стоит ли упомянуть заранее?', reply_markup=keyboard)
+        bot.register_next_step_handler(msg, in_advance)
+    elif message.text == 'Цикличный':
         pass
 
 
-async def once(update, context):
-    choice = update.message.text
-    if choice == 'Да':
+def in_advance(message):
+    DATA[-1]['In_advance'] = message.text
+    if message.text == 'Да':
+        calendar, step = DetailedTelegramCalendar().build()
+        msg = bot.send_message(message.chat.id,
+                         f"Выберите {LSTEP[step]}",
+                         reply_markup=calendar)
+    elif message.text == 'Нет':
         pass
-    elif choice == 'Нет':
-        pass
 
 
-async def cancel(update, context):
-    await update.message.reply_text(f'{DATA[-1]}')
-    return ConversationHandler.END
+@bot.callback_query_handler(func=DetailedTelegramCalendar.func())
+def cal(c):
+    result, key, step = DetailedTelegramCalendar().process(c.data)
+    if not result and key:
+        bot.edit_message_text(f"Select {LSTEP[step]}",
+                              c.message.chat.id,
+                              c.message.message_id,
+                              reply_markup=key)
+    elif result:
+        bot.edit_message_text(f"You selected {result}",
+                              c.message.chat.id,
+                              c.message.message_id)
 
 
-def main():
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("reminder", reminder)],
-        states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name)],
-            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description)],
-            THETYPE: [MessageHandler(filters.Regex("^(Разовый|Цикличный)$"), thetype)],
-            ONCE: [MessageHandler(filters.Regex("^(Да|Нет)$"), once)]},
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    application.add_handler(conv_handler)
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
+bot.polling(none_stop=True)

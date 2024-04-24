@@ -27,6 +27,50 @@ def tytorial(message):
 те /remove.""", reply_markup=keyboard)
 
 
+@bot.message_handler(commands=['info'])
+def info(message):
+    if len(DATA) == 0:
+        bot.send_message(message.from_user.id, "Ни одного напоминателя ещё нет. Самое время добавить командой \
+/reminder")
+    else:
+        for i in range(len(DATA)):
+            bot.send_message(message.from_user.id, f"""Напоминатель №{i + 1}""")
+            end(message, i)
+
+
+@bot.message_handler(commands=['change'])
+def change(message):
+    if len(DATA) == 0:
+        bot.send_message(message.from_user.id, "Пока что тут и менять нечего. Самое время это исправить командой /\
+reminder.")
+    else:
+        info(message)
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        for i in range(1, len(DATA) + 1):
+            button = types.KeyboardButton(i)
+            keyboard.add(button)
+        msg = bot.send_message(message.from_user.id, """Какой напоминатель вы хотите изменить?""",
+                               reply_markup=keyboard)
+        bot.register_next_step_handler(msg, fp)
+
+
+def fp(message):
+    text = message.text
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for i in DATA[int(text) - 1].keys():
+        button = types.KeyboardButton(i)
+        keyboard.add(button)
+    bot.send_message(message.from_user.id, """Какой параметр нужно изменить?""",
+                            reply_markup=keyboard)
+    pick(message, int(text) - 1)
+
+
+def pick(message, i):
+    text = message.text
+    bot.send_message(message.from_user.id, message)
+    # реализовать замену всех возможных элементов
+
+
 @bot.message_handler(commands=['reminder'])
 def reminder(message):
     msg = bot.send_message(message.chat.id, "Создается новый напоминатель. Введите название.")
@@ -126,7 +170,7 @@ def thetype(message):
         if message.text == 'Разовый':
             DATA[-1]['Type'] = 'Разовый'
             bot.reply_to(message, f"""Прелестно. Посмотрим, что у нас получилось.""")
-            end(message)
+            end(message, -1)
         elif message.text == 'Цикличный':
             DATA[-1]['Type'] = 'Цикличный'
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -165,40 +209,43 @@ def thecertain(message):
             raise TypeError
         DATA[-1]['Frequency'] = message.text
         bot.send_message(message.chat.id, f"""Прелестно. Посмотрим, что у нас получилось.""")
-        end(message)
+        end(message, -1)
     except Exception:
         msg = bot.reply_to(message, """Неверный формат ввода. Требования ввода: Число(от 1 до 72)""")
         bot.register_next_step_handler(msg, thecertain)
 
 
-def end(message):
-    if DATA[-1]['Type'] == 'Разовый':
-        endtype = 'Разовый'
-    else:
-        if DATA[-1]['Frequency_type'] == 'Поминутный':
-            if int(DATA[-1]['Frequency']) == 1:
-                endtype = 'Каждую минуту.'
-            elif 2 <= int(DATA[-1]['Frequency']) <= 4:
-                endtype = f'Каждые {DATA[-1]['Frequency']} минуты.'
-            else:
-                endtype = f'Каждые {DATA[-1]['Frequency']} минут.'
-        elif DATA[-1]['Frequency_type'] == 'Почасовой':
-            if int(DATA[-1]['Frequency']) == 1:
-                endtype = 'Каждый час.'
-            elif 2 <= int(DATA[-1]['Frequency']) <= 4:
-                endtype = f'Каждые {DATA[-1]['Frequency']} часа.'
-            else:
-                endtype = f'Каждые {DATA[-1]['Frequency']} часов.'
+def end(message, i):
+    try:
+        if DATA[i]['Type'] == 'Разовый':
+            endtype = 'Разовый'
         else:
-            if int(DATA[-1]['Frequency']) == 1:
-                endtype = 'Раз в день.'
-            elif 2 <= int(DATA[-1]['Frequency']) <= 4:
-                endtype = f'Каждые {DATA[-1]['Frequency']} дня.'
+            if DATA[i]['Frequency_type'] == 'Поминутный':
+                if int(DATA[-i]['Frequency']) == 1:
+                    endtype = 'Каждую минуту.'
+                elif 2 <= int(DATA[i]['Frequency']) <= 4:
+                    endtype = f'Каждые {DATA[i]['Frequency']} минуты.'
+                else:
+                    endtype = f'Каждые {DATA[i]['Frequency']} минут.'
+            elif DATA[i]['Frequency_type'] == 'Почасовой':
+                if int(DATA[i]['Frequency']) == 1:
+                    endtype = 'Каждый час.'
+                elif 2 <= int(DATA[i]['Frequency']) <= 4:
+                    endtype = f'Каждые {DATA[i]['Frequency']} часа.'
+                else:
+                    endtype = f'Каждые {DATA[i]['Frequency']} часов.'
             else:
-                endtype = f'Каждые {DATA[-1]['Frequency']} дней.'
-    bot.send_message(message.chat.id, f"""Напоминание - {DATA[-1]['Name']}\nОписание - {DATA[-1]['Description']}\
-\nДата - {datetime.datetime.strftime(DATA[-1]['Date'], '%A, %B %d, %Y')}\nВремя - {DATA[-1]['hour']}:\
-{DATA[-1]['minute']}\nЧастота - {endtype}""")
+                if int(DATA[i]['Frequency']) == 1:
+                    endtype = 'Раз в день.'
+                elif 2 <= int(DATA[i]['Frequency']) <= 4:
+                    endtype = f'Каждые {DATA[i]['Frequency']} дня.'
+                else:
+                    endtype = f'Каждые {DATA[i]['Frequency']} дней.'
+        bot.send_message(message.chat.id, f"""Название - {DATA[i]['Name']}\nОписание - \
+{DATA[i]['Description']}\nДата - {datetime.datetime.strftime(DATA[i]['Date'], '%A, %B %d, %Y')}\nВремя - \
+{DATA[i]['hour']}:{DATA[i]['minute']}\nЧастота - {endtype}""")
+    except Exception:
+        bot.send_message(message.chat.id, 'Упс, что то пошло не так')
 
 
 bot.polling(none_stop=True)

@@ -6,7 +6,7 @@ import datetime
 
 bot = telebot.TeleBot(BOT_TOKEN)
 DATA = []
-
+DATA_TO_CHANGE = 0
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -60,17 +60,111 @@ def fp(message):
     for i in DATA[int(text) - 1].keys():
         button = types.KeyboardButton(i)
         keyboard.add(button)
-    bot.send_message(message.from_user.id, """Какой параметр нужно изменить?""",
+    msg = bot.send_message(message.from_user.id, """Какой параметр нужно изменить?""",
                             reply_markup=keyboard)
-    pick(message, int(text) - 1)
+    DATA_TO_CHANGE = int(text) - 1
+    bot.register_next_step_handler(msg, pick)
 
-
-def pick(message, i):
+def pick(message):
     text = message.text
-    bot.send_message(message.from_user.id, message)
-    # реализовать замену всех возможных элементов
+    if text == 'Name':
+        msg = bot.send_message(message.chat.id, "Введите новое название.")
+        bot.register_next_step_handler(msg, name_change)
+    elif text == 'Description':
+        msg = bot.send_message(message.chat.id, "Введите новое описание.")
+        bot.register_next_step_handler(msg, description_change)
+    elif text == 'Date':
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        button1 = types.KeyboardButton('Сегодня')
+        button2 = types.KeyboardButton('Другая дата')
+        keyboard.add(button1, button2)
+        msg = bot.send_message(message.chat.id, """Выберите новую дату.""",
+                               reply_markup=keyboard)
+        bot.register_next_step_handler(msg, date_change)
+    elif text in ['hour', 'minutes']:
+        msg = bot.send_message(message.chat.id,
+                               """Теперь введите час в формате 24, а затем минуту. Пример: 15 53.""")
+        bot.register_next_step_handler(msg, change_thetime)
+    elif text == 'Type':
+        pass
+    elif text == 'Frequency_type':
+        pass
+    elif text == 'Frequency':
+        pass
 
 
+def name_change(message):
+    DATA[DATA_TO_CHANGE]['Name'] = message.text
+    bot.send_message(message.chat.id, f'Готово. Теперь данный напоминатель выглядит так:')
+    end(message, DATA_TO_CHANGE)
+
+
+def description_change(message):
+    DATA[DATA_TO_CHANGE]['Description'] = message.text
+    bot.send_message(message.chat.id, f'Готово. Теперь данный напоминатель выглядит так:')
+    end(message, DATA_TO_CHANGE)
+
+
+def date_change(message):
+    try:
+        if message.text not in ['Сегодня', 'Другая дата']:
+            raise TypeError
+        if message.text == 'Сегодня':
+            DATA[DATA_TO_CHANGE]['Date'] = datetime.date.today()
+            bot.send_message(message.chat.id, f'Готово. Теперь данный напоминатель выглядит так:')
+            end(message, DATA_TO_CHANGE)
+        elif message.text == 'Другая дата':
+            calendar, step = DetailedTelegramCalendar().build()
+            bot.send_message(message.chat.id,
+                             f"Select {LSTEP[step]}",
+                             reply_markup=calendar)
+
+            @bot.callback_query_handler(func=DetailedTelegramCalendar.func())
+            def cal(c):
+                nice = False
+                result, key, step = DetailedTelegramCalendar().process(c.data)
+                if not result and key:
+                    bot.edit_message_text(f"Select {LSTEP[step]}",
+                                          c.message.chat.id,
+                                          c.message.message_id,
+                                          reply_markup=key)
+                elif result:
+                    bot.edit_message_text(f"Вы выбрали {datetime.datetime.strftime(result, '%A, %B %d, %Y')}",
+                                          c.message.chat.id,
+                                          c.message.message_id)
+                    if result < datetime.date.today():
+                        bot.reply_to(message, 'Неверный формат ввода: дата не может быть в прошлом.')
+                        calendar, step = DetailedTelegramCalendar().build()
+                        bot.send_message(message.chat.id,
+                                         f"Select {LSTEP[step]}",
+                                         reply_markup=calendar)
+                    else:
+                        nice = True
+                    if nice:
+                        DATA[DATA_TO_CHANGE]['Date'] = result
+                        bot.send_message(message.chat.id, f'Готово. Теперь данный напоминатель выглядит так:')
+                        end(message, DATA_TO_CHANGE)
+    except Exception as e:
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        button1 = types.KeyboardButton('Сегодня')
+        button2 = types.KeyboardButton('Другая дата')
+        keyboard.add(button1, button2)
+        msg = bot.send_message(message.chat.id, """Выберите вариант даты.""", reply_markup=keyboard)
+        bot.register_next_step_handler(msg, time)
+
+
+def change_thetime(message):
+    try:
+        text = message.text.split()
+        if not (0 <= int(text[0]) < 24 and 0 <= int(text[1]) < 60):
+            raise TypeError
+        DATA[DATA_TO_CHANGE]['hour'] = text[0]
+        DATA[DATA_TO_CHANGE]['minute'] = text[1]
+        bot.send_message(message.chat.id, f'Готово. Теперь данный напоминатель выглядит так:')
+        end(message, DATA_TO_CHANGE)
+    except Exception as e:
+        msg = bot.reply_to(message, "Неверный формат ввода. Требования ввода: Часы(0-23) минуты(0-59).")
+        bot.register_next_step_handler(msg, change_thetime)
 @bot.message_handler(commands=['reminder'])
 def reminder(message):
     msg = bot.send_message(message.chat.id, "Создается новый напоминатель. Введите название.")
@@ -244,8 +338,8 @@ def end(message, i):
         bot.send_message(message.chat.id, f"""Название - {DATA[i]['Name']}\nОписание - \
 {DATA[i]['Description']}\nДата - {datetime.datetime.strftime(DATA[i]['Date'], '%A, %B %d, %Y')}\nВремя - \
 {DATA[i]['hour']}:{DATA[i]['minute']}\nЧастота - {endtype}""")
-    except Exception:
-        bot.send_message(message.chat.id, 'Упс, что то пошло не так')
+    except Exception as e:
+        bot.send_message(message.chat.id, e)
 
 
 bot.polling(none_stop=True)

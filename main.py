@@ -526,11 +526,15 @@ def morecertain(message):
 
 
 def thecertain(message):
-    if not (0 < int(message.text) <= 72):
-        raise TypeError
-    DATA[-1]['Frequency'] = message.text
-    bot.send_message(message.chat.id, f"""Прелестно. Посмотрим, что у нас получилось.""")
-    end(message, -1)
+    try:
+        if not (0 < int(message.text) <= 72):
+            raise TypeError
+        DATA[-1]['Frequency'] = message.text
+        bot.send_message(message.chat.id, f"""Прелестно. Посмотрим, что у нас получилось.""")
+        end(message, -1)
+    except Exception:
+        msg = bot.reply_to(message, """Неверный формат ввода. Требования ввода: Число(от 1 до 72)""")
+        bot.register_next_step_handler(msg, thecertain_change)
 
 
 def end(message, i):
